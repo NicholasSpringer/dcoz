@@ -8,8 +8,8 @@ import (
 
 // for testing purposes
 type UDPClient struct {
-	port int
-	conn net.Conn
+	port   int
+	socket net.Conn
 }
 
 func CreateClient() (client *UDPClient, err error) {
@@ -17,13 +17,13 @@ func CreateClient() (client *UDPClient, err error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := net.DialUDP("udp4", nil, addr)
+	socket, err := net.DialUDP("udp4", nil, addr)
 	if err != nil {
 		return nil, err
 	}
 	return &UDPClient{
-		port: utils.PORT,
-		conn: conn,
+		port:   utils.PORT,
+		socket: socket,
 	}, nil
 }
 
@@ -31,4 +31,8 @@ func (c *UDPClient) Accept() {
 	for {
 
 	}
+}
+
+func (c *UDPClient) DestroyClient() {
+	c.socket.Close()
 }

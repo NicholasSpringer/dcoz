@@ -1,9 +1,10 @@
 package server
 
-import "net"
+import (
+	"net"
 
-var PORT int = 4444
-var BUFFSIZE = 1024
+	"github.com/dcoz-controller/utils"
+)
 
 type UDPServer struct {
 	port int
@@ -11,17 +12,18 @@ type UDPServer struct {
 }
 
 func CreateServer() (server *UDPServer, err error) {
-	addr, err := net.ResolveUDPAddr("udp4", ":"+string(PORT))
+	addr, err := net.ResolveUDPAddr("udp4", ":"+string(utils.PORT))
 	// check to see if connection is created
 	if err != nil {
 		return nil, err
+
 	}
 	conn, err := net.ListenUDP("udp4", addr)
 	if err != nil {
 		return nil, err
 	}
 	return &UDPServer{
-		port: PORT,
+		port: utils.PORT,
 		conn: conn,
 	}, nil
 }
