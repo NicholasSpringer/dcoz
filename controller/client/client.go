@@ -2,9 +2,11 @@ package client
 
 import (
 	"net"
-	"utils"
+
+	"github.com/dcoz-controller/utils"
 )
 
+// for testing purposes
 type UDPClient struct {
 	port int
 	conn net.Conn

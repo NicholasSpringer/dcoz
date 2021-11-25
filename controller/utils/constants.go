@@ -1,4 +1,6 @@
 package utils
 
-var PORT int = 4444
-var BUFFSIZE int = 1024
+const (
+	PORT     = 4444
+	BUFFSIZE = 1024
+)

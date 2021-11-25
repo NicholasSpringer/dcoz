@@ -20,11 +20,10 @@ func CreateServer() (server *UDPServer, err error) {
 	if err != nil {
 		return nil, err
 	}
-	server = &UDPServer{
+	return &UDPServer{
 		port: PORT,
 		conn: conn,
-	}
-	return server, nil
+	}, nil
 }
 
 func (s *UDPServer) Serve() {
