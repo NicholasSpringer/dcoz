@@ -12,6 +12,8 @@ type UDPClient struct {
 	socket net.Conn
 }
 
+// create a message --> should contain process id to virtually speed things up 
+
 func CreateClient() (client *UDPClient, err error) {
 	addr, err := net.ResolveUDPAddr("udp4", ":"+string(utils.PORT))
 	if err != nil {

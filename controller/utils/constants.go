@@ -2,5 +2,5 @@ package utils
 
 const (
 	PORT     = 4444
-	BUFFSIZE = 1024
+	BUFFSIZE = 4096
 )
