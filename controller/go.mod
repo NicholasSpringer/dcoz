@@ -10,4 +10,5 @@ require (
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/flynn-archive/go-shlex v0.0.0-20150515145356-3f9db97f8568 // indirect
 	github.com/stretchr/testify v1.7.0 // indirect
+	go.uber.org/atomic v1.9.0
 )

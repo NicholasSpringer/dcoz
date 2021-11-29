@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/dcoz-controller/utils"
+	"go.uber.org/atomic"
 )
 
 type PIDMessage struct {
@@ -67,8 +68,8 @@ func (s *UDPServer) listen() {
 }
 
 // don't send message to excluded value
-func (s *UDPServer) BroadcastSpeedMsg(speed int, excluded int) int {
-	numSuccessful := 0
+func (s *UDPServer) BroadcastSpeedMsg(speed int, excluded int) int64 {
+	numSuccessful := atomic.NewInt64(0)
 	for pid, addr := range s.processIds {
 		if pid == excluded {
 			continue
@@ -97,8 +98,8 @@ func (s *UDPServer) BroadcastSpeedMsg(speed int, excluded int) int {
 				fmt.Printf("received Error: %v when writing packet, expected nil", err)
 				return
 			}
-			numSuccessful++
+			numSuccessful.Inc()
 		}(addr)
 	}
-	return numSuccessful
+	return numSuccessful.Load()
 }
