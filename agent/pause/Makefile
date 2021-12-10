@@ -1,6 +1,6 @@
 CC = gcc
 
-EXE = dcoz-agent
+EXE = pause
 
 CFLAGS = -Wall -pipe 
 

@@ -31,24 +31,24 @@ typedef struct sched_config {
 } sched_config_t;
 
 // Obstructs a CPU for the given duration by setting own scheduling policy
-// to FIFO with given priority
+// to round robin (FIFO with time quantum) with given priority
 int obstruct(int32_t prio, time_t duration) {
     time_t start;
     time_t now;
     time(&start);
     do {
         time(&now);
-    } while (now - start < duration);
+    } while ((now - start) * 1000 < duration);
     return 0;
 }
 
 // Pause all processes except for those with given process ids
-int virtual_speedup(int n_cores, int prio, time_t duration, pid_t targets[],
+int virtual_speedup(int n_cores, time_t duration, int prio, pid_t targets[],
                     int n_targets) {
     sched_config_t *configs = malloc(sizeof(sched_config_t) * n_targets);
     for (int i = 0; i < n_targets; i++) {
         pid_t pid = targets[i];
-        // Get current policy
+        // Save current policy
         int cur_policy = sched_getscheduler(pid);
         if (cur_policy == -1) {
             free(configs);
@@ -57,7 +57,7 @@ int virtual_speedup(int n_cores, int prio, time_t duration, pid_t targets[],
         }
         configs[i].policy = cur_policy;
 
-        // Get current priority
+        // Save current priority
         char cur_sched_attr[48];
         int err = syscall(SYS_sched_getattr, pid, &cur_sched_attr,
                           sizeof(cur_sched_attr), 0);
@@ -73,7 +73,7 @@ int virtual_speedup(int n_cores, int prio, time_t duration, pid_t targets[],
         struct sched_param temp_params;
         memset(&temp_params, 0, sizeof(temp_params));
         temp_params.sched_priority = prio + 1;
-        err = sched_setscheduler(pid, SCHED_FIFO, &temp_params);
+        err = sched_setscheduler(pid, SCHED_RR, &temp_params);
         if (err != 0) {
             perror("sched_setscheduler error");
             free(configs);
@@ -81,6 +81,7 @@ int virtual_speedup(int n_cores, int prio, time_t duration, pid_t targets[],
         }
     }
 
+    // Start obstructor processes
     for (int i = 0; i < n_cores; i++) {
         int f = fork();
         if (f == -1) {
@@ -93,7 +94,7 @@ int virtual_speedup(int n_cores, int prio, time_t duration, pid_t targets[],
         } else {
             struct sched_param c;
             c.sched_priority = prio;
-            int err = sched_setscheduler(f, SCHED_FIFO, &c);
+            int err = sched_setscheduler(f, SCHED_RR, &c);
             if (err != 0) {
                 perror("sched_setscheduler error");
                 return 1;
@@ -104,7 +105,7 @@ int virtual_speedup(int n_cores, int prio, time_t duration, pid_t targets[],
     // after obstructors finish executing
     for (int i = 0; i < n_targets; i++) {
         pid_t pid = targets[i];
-        // Set to old policy and priority
+        // Restore old policy and priority
         struct sched_param old_params;
         memset(&old_params, 0, sizeof(old_params));
         old_params.sched_priority = configs[i].priority;
