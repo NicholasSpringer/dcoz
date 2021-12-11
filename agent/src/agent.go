@@ -24,8 +24,8 @@ type agent struct {
 }
 
 type speedupMessage struct {
-	duration   int
-	targetPods []string
+	Duration   int      `json:"duration"`
+	TargetPods []string `json:"targetPods"`
 }
 
 func main() {
@@ -60,7 +60,6 @@ func main() {
 	}
 	ag := agent{pauseCfg: pauseConfig{nCores: nCores,
 		prio: prio, pauseBinPath: pauseBinPath}, port: port}
-	pause(&ag.pauseCfg, 5000, []int{})
 	ag.listen()
 }
 
@@ -140,9 +139,9 @@ func (ag *agent) listen() {
 
 		// If pause duration is 0, do not execute a pause. Otherwise, translate
 		// target pod identifier to target local pids and execute pause.
-		if speedupMsg.duration != 0 {
-			targetPids := getTargetPids(speedupMsg.targetPods)
-			pause(&ag.pauseCfg, speedupMsg.duration, targetPids)
+		if speedupMsg.Duration != 0 {
+			targetPids := getTargetPids(speedupMsg.TargetPods)
+			pause(&ag.pauseCfg, speedupMsg.Duration, targetPids)
 		}
 	}
 }
