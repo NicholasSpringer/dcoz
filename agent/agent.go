@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -47,7 +48,7 @@ func main() {
 		errors = append(errors, "Must specify num cores using -cores")
 	}
 	if prio == -1 {
-		errors = append(errors, "Must specify blocker thread priority using -prio")
+		errors = append(errors, "Must specify blocker thread priority using -priority")
 	}
 	if pauseBinPath == "" {
 		errors = append(errors, "Must specify pause path using -pause")
@@ -56,7 +57,8 @@ func main() {
 		errors = append(errors, "Must specify port using -port")
 	}
 	if len(errors) != 0 {
-		log.Fatal(strings.Join(errors, "\n"))
+		fmt.Println(strings.Join(errors, "\n"))
+		os.Exit(1)
 	}
 	ag := agent{pauseCfg: pauseConfig{nCores: nCores,
 		prio: prio, pauseBinPath: pauseBinPath}, port: port}
@@ -65,7 +67,7 @@ func main() {
 
 // Run pause program with given arguments
 func pause(config *pauseConfig, duration int, targetPids []int) {
-	pauseCmdRaw := []byte(fmt.Sprintf("sudo %s %d %d %d %d",
+	pauseCmdRaw := []byte(fmt.Sprintf("%s %d %d %d %d",
 		config.pauseBinPath, config.nCores, duration, config.prio, len(targetPids)))
 	for _, pid := range targetPids {
 		pauseCmdRaw = append(pauseCmdRaw, []byte(fmt.Sprintf(" %d", pid))...)
@@ -74,7 +76,8 @@ func pause(config *pauseConfig, duration int, targetPids []int) {
 	cmd := exec.Command("/bin/sh", "-c", pauseCmd)
 	err := cmd.Run()
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("pause error: ", err.Error())
+		os.Exit(1)
 	}
 }
 
@@ -88,25 +91,28 @@ func getTargetPids(targetPods []string) []int {
 	// Get list of all processes
 	allProcesses, err := ps.Processes()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 	targetPids := []int{}
 	for _, process := range allProcesses {
 		pid := process.Pid()
 		// Determine pod identifier of pid
-		nsCmd := fmt.Sprintf("sudo nsenter -t %d -u hostname", pid)
+		nsCmd := fmt.Sprintf("nsenter -t %d -u hostname", pid)
 		cmd := exec.Command("/bin/sh", "-c", nsCmd)
 		outputRaw, err := cmd.Output()
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println("nsenter error: ", err.Error())
+			continue
 		}
 		output := string(outputRaw)
 		// Check if pod identifier is in targets
 		_, isTarget := targetPodsSet[output]
+		fmt.Printf("%s %t\n", output, isTarget)
 		if isTarget {
 			targetPids = append(targetPids, pid)
 		}
 	}
+	fmt.Println(targetPids)
 	return targetPids
 }
 
@@ -114,25 +120,28 @@ func getTargetPids(targetPods []string) []int {
 func (ag *agent) listen() {
 	addr := net.UDPAddr{
 		Port: ag.port,
-		IP:   net.ParseIP("127.0.0.1"),
+		IP:   net.ParseIP("0.0.0.0"),
 	}
 	conn, err := net.ListenUDP("udp", &addr)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 	defer conn.Close()
 	buff := make([]byte, 2048)
+	println("Agent started!")
 	for {
 		length, contrAddr, err := conn.ReadFromUDP(buff)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println("udp listening error: ", err.Error())
+			os.Exit(1)
 		}
 		var speedupMsg speedupMessage
 		err = json.Unmarshal(buff[:length], &speedupMsg)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("json unmarshal error: ", err)
 			continue
 		}
+		fmt.Println(speedupMsg)
 		// Respond with heartbeat after successfully receiving message
 		hbMsg := []byte{0}
 		conn.WriteToUDP(hbMsg, contrAddr)
