@@ -15,19 +15,10 @@ func createShell(server *server.UDPServer) {
 			c.Println("test")
 		},
 	})
-	// running shell=
 	shell.Run()
 }
 
 func main() {
-
-	// find microservices in soa
-	// save values in map
-	// run experiment
-	// 		--> go through list of services associated with request
-	// 		--> send slowdown messages to all other services
-	// 		--> pass requests to service from workload generator (need an api for that)
-	// 		--> once experiment over, send a message to the servers to reset the scheduling policy
 
 	udpServer, err := server.CreateServer()
 	if err != nil {

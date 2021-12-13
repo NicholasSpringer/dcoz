@@ -14,14 +14,14 @@ type PIDMessage struct {
 }
 
 type Message struct {
-	SlowdownSpeed int `json:slowdownSpeed`
+	SlowdownSpeed float64 `json:slowdownSpeed`
 }
 
 type UDPServer struct {
 	port int
-	// map of process ids to ip addresses
-	processIds map[int]*net.UDPAddr
-	exit       chan bool
+	// map of process ids to ip addresses --> keeping track of ip addresses now
+	nodeIPs []*net.UDPAddr
+	exit    chan bool
 }
 
 func CreateServer() (server *UDPServer, err error) {
@@ -61,17 +61,17 @@ func (s *UDPServer) listen() {
 			continue
 		}
 		// adding process ID with addr
-		s.processIds[message.ProcessID] = remoteAddr
+		s.nodeIPs = append(s.nodeIPs, remoteAddr)
 
 	}
 
 }
 
 // don't send message to excluded value
-func (s *UDPServer) BroadcastSpeedMsg(speed int, excluded int) int64 {
+func (s *UDPServer) BroadcastSpeedMsg(speed float64, excluded *net.UDPAddr) int64 {
 	numSuccessful := atomic.NewInt64(0)
-	for pid, addr := range s.processIds {
-		if pid == excluded {
+	for _, addr := range s.nodeIPs {
+		if addr == excluded {
 			continue
 		}
 		go func(addr *net.UDPAddr) {
