@@ -73,6 +73,7 @@ func (e *Experiment) runExperiment() (float64, int) {
 		} else {
 			e.requests[reqCt][0] = latency
 		}
+		reqCt += 1
 	}
 	done <- true
 	reqTicker.Stop()
