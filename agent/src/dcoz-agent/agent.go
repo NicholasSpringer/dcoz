@@ -7,10 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"strings"
-
-	ps "github.com/mitchellh/go-ps"
 )
 
 type pauseConfig struct {
@@ -22,12 +19,15 @@ type pauseConfig struct {
 type agent struct {
 	pauseCfg pauseConfig
 	port     int
+	procPath string
 }
 
 type speedupMessage struct {
-	Duration   int      `json:"duration"`
-	TargetPods []string `json:"targetPods"`
+	Duration         int      `json:"duration"`
+	TargetContainers []string `json:"targetContainers"`
 }
+
+const PAUSE_TARGET_NS_PID = 1
 
 func main() {
 	var nCores int
@@ -38,6 +38,9 @@ func main() {
 
 	var pauseBinPath string
 	flag.StringVar(&pauseBinPath, "pause", "", "Pausing binary path")
+
+	var procPath string
+	flag.StringVar(&procPath, "proc", "/proc", "Path of host proc directory")
 
 	var port int
 	flag.IntVar(&port, "port", -1, "Port to listen on")
@@ -61,59 +64,8 @@ func main() {
 		os.Exit(1)
 	}
 	ag := agent{pauseCfg: pauseConfig{nCores: nCores,
-		prio: prio, pauseBinPath: pauseBinPath}, port: port}
+		prio: prio, pauseBinPath: pauseBinPath}, port: port, procPath: procPath}
 	ag.listen()
-}
-
-// Run pause program with given arguments
-func pause(config *pauseConfig, duration int, targetPids []int) {
-	pauseCmdRaw := []byte(fmt.Sprintf("%s %d %d %d %d",
-		config.pauseBinPath, config.nCores, duration, config.prio, len(targetPids)))
-	for _, pid := range targetPids {
-		pauseCmdRaw = append(pauseCmdRaw, []byte(fmt.Sprintf(" %d", pid))...)
-	}
-	pauseCmd := string(pauseCmdRaw)
-	cmd := exec.Command("/bin/sh", "-c", pauseCmd)
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println("pause error: ", err.Error())
-		os.Exit(1)
-	}
-}
-
-// Translate target pod identifiers to a list of associated pids
-func getTargetPids(targetPods []string) []int {
-	// Create set from target pod list
-	targetPodsSet := make(map[string]struct{})
-	for _, pod := range targetPods {
-		targetPodsSet[pod] = struct{}{}
-	}
-	// Get list of all processes
-	allProcesses, err := ps.Processes()
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	targetPids := []int{}
-	for _, process := range allProcesses {
-		pid := process.Pid()
-		// Determine pod identifier of pid
-		nsCmd := fmt.Sprintf("nsenter -t %d -u hostname", pid)
-		cmd := exec.Command("/bin/sh", "-c", nsCmd)
-		outputRaw, err := cmd.Output()
-		if err != nil {
-			fmt.Println("nsenter error: ", err.Error())
-			continue
-		}
-		output := string(outputRaw)
-		// Check if pod identifier is in targets
-		_, isTarget := targetPodsSet[output]
-		fmt.Printf("%s %t\n", output, isTarget)
-		if isTarget {
-			targetPids = append(targetPids, pid)
-		}
-	}
-	fmt.Println(targetPids)
-	return targetPids
 }
 
 // Listen for messages from controller
@@ -149,8 +101,8 @@ func (ag *agent) listen() {
 		// If pause duration is 0, do not execute a pause. Otherwise, translate
 		// target pod identifier to target local pids and execute pause.
 		if speedupMsg.Duration != 0 {
-			targetPids := getTargetPids(speedupMsg.TargetPods)
-			pause(&ag.pauseCfg, speedupMsg.Duration, targetPids)
+			targetPids := getTargetPids(speedupMsg.TargetContainers, ag.procPath)
+			pause(ag.procPath, &ag.pauseCfg, speedupMsg.Duration, targetPids)
 		}
 	}
 }

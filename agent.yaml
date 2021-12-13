@@ -13,21 +13,27 @@ spec:
       labels:
         name: dcoz-agent
     spec:
+      hostPID: true
       containers:
       - name: dcoz-agent
         image: docker.io/springern/dcoz-agent:latest
         command: ["/bin/bash"]
-        args: ["-c", "sysctl -w kernel.sched_rt_runtime_us=-1 && dcoz-agent -cores $(nproc) -priority 90 -pause ./pause/pause -port 8081 -proc /hostproc"]
+        args: 
+        - "-c"
+        - >-
+          sysctl -w kernel.sched_rt_runtime_us=-1 && 
+          dcoz-agent -cores $(nproc) -priority 90 -pause ./pause/dcoz-pause 
+          -port 8081 -proc /proc
         securityContext:
           privileged: true
         ports:
         - containerPort: 8081
           protocol: UDP
-        volumeMounts:
-        - mountPath: /hostproc
-          name: proc-volume
-      volumes:
-      - name: proc-volume
-        hostPath:
-          path: /proc
-          type: Directory
+      #   volumeMounts:
+      #   - mountPath: /hostproc
+      #     name: proc-volume
+      # volumes:
+      # - name: proc-volume
+      #   hostPath:
+      #     path: /proc
+      #     type: Directory

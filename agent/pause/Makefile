@@ -1,6 +1,6 @@
 CC = gcc
 
-EXE = pause
+EXE = dcoz-pause
 
 CFLAGS = -Wall -pipe 
 

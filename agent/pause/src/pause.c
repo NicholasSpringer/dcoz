@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
-#include <time.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 /*
@@ -30,21 +30,45 @@ typedef struct sched_config {
     int priority;
 } sched_config_t;
 
+typedef unsigned long long micro_time_t;
+
+micro_time_t SECOND = 1000 * 1000;
+
+micro_time_t micros_since_epoch() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    micro_time_t micros =
+        (micro_time_t)(tv.tv_sec) * SECOND + (micro_time_t)(tv.tv_usec);
+    return micros;
+}
+
 // Obstructs a CPU for the given duration by setting own scheduling policy
 // to round robin (FIFO with time quantum) with given priority
-int obstruct(int32_t prio, time_t duration) {
-    time_t start;
-    time_t now;
-    time(&start);
-    do {
-        time(&now);
-    } while ((now - start) * 1000 < duration);
-    return 0;
+void obstruct(long long end) {
+    while (micros_since_epoch() < end) {
+    }
 }
 
 // Pause all processes except for those with given process ids
-int virtual_speedup(int n_cores, time_t duration, int prio, pid_t targets[],
-                    int n_targets) {
+int virtual_speedup(int n_cores, unsigned long duration, int prio,
+                    pid_t targets[], int n_targets) {
+    if (duration > 30 * SECOND) {
+        fprintf(stderr, "Pause duration too large!\n");
+        return 1;
+    }
+    // Set main pause process to run real time with prio priority
+    struct sched_param c;
+    memset(&c, 0, sizeof(c));
+    c.sched_priority = prio;
+    int err = sched_setscheduler(0, SCHED_RR, &c);
+    if (err != 0) {
+        perror("sched_setscheduler error");
+        return 1;
+    }
+
+    micro_time_t now = micros_since_epoch();
+    micro_time_t end = now + duration;
+
     sched_config_t *configs = malloc(sizeof(sched_config_t) * n_targets);
     for (int i = 0; i < n_targets; i++) {
         pid_t pid = targets[i];
@@ -72,7 +96,7 @@ int virtual_speedup(int n_cores, time_t duration, int prio, pid_t targets[],
         // Set to temp policy and priority
         struct sched_param temp_params;
         memset(&temp_params, 0, sizeof(temp_params));
-        temp_params.sched_priority = prio + 1;
+        temp_params.sched_priority = prio;
         err = sched_setscheduler(pid, SCHED_RR, &temp_params);
         if (err != 0) {
             perror("sched_setscheduler error");
@@ -82,18 +106,19 @@ int virtual_speedup(int n_cores, time_t duration, int prio, pid_t targets[],
     }
 
     // Start obstructor processes
-    for (int i = 0; i < n_cores; i++) {
+    for (int i = 0; i < n_cores - 1; i++) {
         int f = fork();
         if (f == -1) {
             perror("sched_setscheduler error");
             free(configs);
             return -1;
         } else if (f == 0) {
-            obstruct(prio, duration);
+            obstruct(end);
             exit(0);
         } else {
             struct sched_param c;
-            c.sched_priority = prio;
+            memset(&c, 0, sizeof(c));
+            c.sched_priority = prio - 1;
             int err = sched_setscheduler(f, SCHED_RR, &c);
             if (err != 0) {
                 perror("sched_setscheduler error");
@@ -101,6 +126,7 @@ int virtual_speedup(int n_cores, time_t duration, int prio, pid_t targets[],
             }
         }
     }
+    obstruct(end);
     // Agent is lower priority than obstructors, so this will not run until
     // after obstructors finish executing
     for (int i = 0; i < n_targets; i++) {
