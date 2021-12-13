@@ -19,7 +19,6 @@ type pauseConfig struct {
 type agent struct {
 	pauseCfg pauseConfig
 	port     int
-	procPath string
 }
 
 type speedupMessage struct {
@@ -38,9 +37,6 @@ func main() {
 
 	var pauseBinPath string
 	flag.StringVar(&pauseBinPath, "pause", "", "Pausing binary path")
-
-	var procPath string
-	flag.StringVar(&procPath, "proc", "/proc", "Path of host proc directory")
 
 	var port int
 	flag.IntVar(&port, "port", -1, "Port to listen on")
@@ -64,7 +60,7 @@ func main() {
 		os.Exit(1)
 	}
 	ag := agent{pauseCfg: pauseConfig{nCores: nCores,
-		prio: prio, pauseBinPath: pauseBinPath}, port: port, procPath: procPath}
+		prio: prio, pauseBinPath: pauseBinPath}, port: port}
 	ag.listen()
 }
 
@@ -93,7 +89,7 @@ func (ag *agent) listen() {
 			fmt.Println("json unmarshal error: ", err)
 			continue
 		}
-		fmt.Println(speedupMsg)
+		fmt.Printf("Speedup Message: %v\n", speedupMsg)
 		// Respond with heartbeat after successfully receiving message
 		hbMsg := []byte{0}
 		conn.WriteToUDP(hbMsg, contrAddr)
@@ -101,8 +97,8 @@ func (ag *agent) listen() {
 		// If pause duration is 0, do not execute a pause. Otherwise, translate
 		// target pod identifier to target local pids and execute pause.
 		if speedupMsg.Duration != 0 {
-			targetPids := getTargetPids(speedupMsg.TargetContainers, ag.procPath)
-			pause(ag.procPath, &ag.pauseCfg, speedupMsg.Duration, targetPids)
+			targetPids := getTargetPids(speedupMsg.TargetContainers)
+			pause(&ag.pauseCfg, speedupMsg.Duration, targetPids)
 		}
 	}
 }

@@ -23,17 +23,9 @@ spec:
         - >-
           sysctl -w kernel.sched_rt_runtime_us=-1 && 
           dcoz-agent -cores $(nproc) -priority 90 -pause ./pause/dcoz-pause 
-          -port 8081 -proc /proc
+          -port 8081
         securityContext:
           privileged: true
         ports:
         - containerPort: 8081
           protocol: UDP
-      #   volumeMounts:
-      #   - mountPath: /hostproc
-      #     name: proc-volume
-      # volumes:
-      # - name: proc-volume
-      #   hostPath:
-      #     path: /proc
-      #     type: Directory
