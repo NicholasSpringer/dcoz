@@ -14,7 +14,8 @@ type PIDMessage struct {
 }
 
 type Message struct {
-	SlowdownSpeed float64 `json:slowdownSpeed`
+	SlowdownDuration float64  `json:slowdownDuration`
+	TargetContainers []string `json:targetContainers`
 }
 
 type UDPServer struct {
@@ -67,13 +68,9 @@ func (s *UDPServer) listen() {
 
 }
 
-// don't send message to excluded value
-func (s *UDPServer) BroadcastSpeedMsg(speed float64, excluded *net.UDPAddr) int64 {
-	numSuccessful := atomic.NewInt64(0)
+func (s *UDPServer) BroadcastPause(slowDowunDuration float64, targetContainers []string) int {
+	numSuccessful := atomic.NewInt32(0)
 	for _, addr := range s.nodeIPs {
-		if addr == excluded {
-			continue
-		}
 		go func(addr *net.UDPAddr) {
 			destAddr, err := net.ResolveUDPAddr("udp", addr.String()+string(s.port))
 			if err != nil {
@@ -87,7 +84,10 @@ func (s *UDPServer) BroadcastSpeedMsg(speed float64, excluded *net.UDPAddr) int6
 				fmt.Printf("received Error: %v when connecting to destination addr, expected nil", err)
 				return
 			}
-			msg := &Message{SlowdownSpeed: speed}
+			msg := &Message{
+				SlowdownDuration: utils.SLOWDOWNDURATION,
+				TargetContainers: targetContainers,
+			}
 			encodedMsg, err := json.Marshal(msg)
 			if err != nil {
 				fmt.Printf("received Error: %v when marshalling data, expected nil", err)
@@ -101,5 +101,5 @@ func (s *UDPServer) BroadcastSpeedMsg(speed float64, excluded *net.UDPAddr) int6
 			numSuccessful.Inc()
 		}(addr)
 	}
-	return numSuccessful.Load()
+	return int(numSuccessful.Load())
 }
