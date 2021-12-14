@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dcoz-controller/server"
-	"github.com/dcoz-controller/utils"
+	"github.com/NicholasSpringer/dcoz/dcoz-controller/server"
+	"github.com/NicholasSpringer/dcoz/dcoz-controller/utils"
 )
 
 // experiment contains information about a SINGLE virutal speed up,

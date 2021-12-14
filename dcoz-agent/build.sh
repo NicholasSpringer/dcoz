@@ -1,1 +1,0 @@
-docker build -f ../docker/dcoz-agent/Dockerfile -t springern/dcoz-agent ..

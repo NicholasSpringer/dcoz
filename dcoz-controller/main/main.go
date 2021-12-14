@@ -1,10 +1,10 @@
 package main
 
 import (
+	"github.com/NicholasSpringer/dcoz/dcoz-controller/experiment"
+	"github.com/NicholasSpringer/dcoz/dcoz-controller/server"
+	"github.com/NicholasSpringer/dcoz/dcoz-controller/utils"
 	"github.com/abiosoft/ishell"
-	"github.com/dcoz-controller/experiment"
-	"github.com/dcoz-controller/server"
-	"github.com/dcoz-controller/utils"
 )
 
 func createShell(s *server.UDPServer) {

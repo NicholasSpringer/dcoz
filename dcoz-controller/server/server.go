@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/dcoz-controller/utils"
+	"github.com/NicholasSpringer/dcoz/dcoz-controller/utils"
 	"go.uber.org/atomic"
 )
 
