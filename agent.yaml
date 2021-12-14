@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dcoz-agent
+  labels:
+    name: dcoz-agent
+spec:
+  selector:
+    matchLabels:
+      name: dcoz-agent
+  template:
+    metadata:
+      labels:
+        name: dcoz-agent
+    spec:
+      hostPID: true
+      containers:
+      - name: dcoz-agent
+        image: docker.io/springern/dcoz-agent:latest
+        command: ["/bin/bash"]
+        args: 
+        - "-c"
+        - >-
+          sysctl -w kernel.sched_rt_runtime_us=-1 && 
+          dcoz-agent -cores $(nproc) -priority 90 -pause dcoz-pause 
+          -port 8081
+        securityContext:
+          privileged: true
+        ports:
+        - containerPort: 8081
+          protocol: UDP
