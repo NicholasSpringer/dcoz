@@ -22,7 +22,7 @@ spec:
         - "-c"
         - >-
           sysctl -w kernel.sched_rt_runtime_us=-1 && 
-          dcoz-agent -cores $(nproc) -priority 90 -pause ./pause/dcoz-pause 
+          dcoz-agent -cores $(nproc) -priority 90 -pause dcoz-pause 
           -port 8081
         securityContext:
           privileged: true
