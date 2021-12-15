@@ -6,6 +6,7 @@
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <signal.h>
 
 /*
  * NOTE: Must set 'sudo sysctl -w kernel.sched_rt_runtime_us=1000000'
@@ -62,6 +63,7 @@ int virtual_speedup(int n_cores, unsigned long duration, int prio,
     c.sched_priority = prio;
     int err = sched_setscheduler(0, SCHED_RR, &c);
     if (err != 0) {
+        // Pause cannot run if this call does not work
         perror("sched_setscheduler error");
         return 1;
     }
@@ -75,9 +77,11 @@ int virtual_speedup(int n_cores, unsigned long duration, int prio,
         // Save current policy
         int cur_policy = sched_getscheduler(pid);
         if (cur_policy == -1) {
-            free(configs);
-            perror("sched_getscheduler error");
-            return -1;
+            // Skip process if cannot get current policy
+            // It is likely that the process ended
+            perror("sched_getscheduler error on target, skipping target");
+            targets[i] = -1;
+            continue;
         }
         configs[i].policy = cur_policy;
 
@@ -86,9 +90,11 @@ int virtual_speedup(int n_cores, unsigned long duration, int prio,
         int err = syscall(SYS_sched_getattr, pid, &cur_sched_attr,
                           sizeof(cur_sched_attr), 0);
         if (err != 0) {
-            free(configs);
-            perror("sched_getattr error");
-            return -1;
+            // Skip process if cannot get current policy
+            // It is likely that the process ended
+            perror("sched_getattr error on target, skipping target");
+            targets[i] = -1;
+            continue;
         }
         configs[i].priority =
             ((struct sched_attr *)cur_sched_attr)->sched_priority;
@@ -99,47 +105,68 @@ int virtual_speedup(int n_cores, unsigned long duration, int prio,
         temp_params.sched_priority = prio;
         err = sched_setscheduler(pid, SCHED_RR, &temp_params);
         if (err != 0) {
-            perror("sched_setscheduler error");
-            free(configs);
-            return -1;
+            // Skip process if cannot modify policy
+            // It is likely that the process ended
+            perror("sched_setscheduler error on target, skipping target");
+            targets[i] = -1;
         }
     }
 
     // Start obstructor processes
-    for (int i = 0; i < n_cores - 1; i++) {
+    pid_t *obstructors = malloc(sizeof(pid_t) * n_cores-1);
+    int abort_pause = 0;
+    int i;
+    for (i = 0; i < n_cores - 1; i++) {
         int f = fork();
         if (f == -1) {
-            perror("sched_setscheduler error");
-            free(configs);
-            return -1;
+            // Abort pause
+            perror("aborting pause due to fork error");
+            abort_pause = 1;
+            break;
         } else if (f == 0) {
             obstruct(end);
             exit(0);
         } else {
+            obstructors[i] = f;
             struct sched_param c;
             memset(&c, 0, sizeof(c));
             c.sched_priority = prio - 1;
             int err = sched_setscheduler(f, SCHED_RR, &c);
             if (err != 0) {
-                perror("sched_setscheduler error");
-                return 1;
+                // Abort pause
+                perror("aborting pause due to shed_setscheduler error on obstructor");
+                i++;
+                abort_pause = 1;
+                break;
             }
         }
     }
-    obstruct(end);
+    if (!abort_pause) {
+        obstruct(end);
+    }
+    for (int j = 0; j < i; j++) {
+        kill(obstructors[j], SIGKILL);
+    }
+    free(obstructors);
+    
+    
     // Agent is lower priority than obstructors, so this will not run until
     // after obstructors finish executing
     for (int i = 0; i < n_targets; i++) {
         pid_t pid = targets[i];
+        if (pid == -1) {
+            // Part of the preparation for this target failed, so it was set to -1
+            // This is likely because the process finished
+            continue;
+        }
         // Restore old policy and priority
         struct sched_param old_params;
         memset(&old_params, 0, sizeof(old_params));
         old_params.sched_priority = configs[i].priority;
         int err = sched_setscheduler(pid, configs[i].policy, &old_params);
         if (err != 0) {
-            free(configs);
-            perror("sched_setscheduler error");
-            return 1;
+            // Process likely finished
+            perror("sched_setscheduler error while restoring target configs");
         }
     }
     free(configs);

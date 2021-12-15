@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 )
 
 // Run pause program with given arguments
-func pause(config *pauseConfig, duration int, targetPids []int) {
+func pause(config *pauseConfig, duration time.Duration, targetPids []int) {
 	pauseCmdRaw := []byte(fmt.Sprintf("%s %d %d %d %d",
-		config.pauseBinPath, config.nCores, duration, config.prio, len(targetPids)))
+		config.pauseBinPath, config.nCores, duration.Microseconds(), config.prio, len(targetPids)))
 	for _, pid := range targetPids {
 		pauseCmdRaw = append(pauseCmdRaw, []byte(fmt.Sprintf(" %d", pid))...)
 	}
@@ -18,9 +19,5 @@ func pause(config *pauseConfig, duration int, targetPids []int) {
 	cmd := exec.Command("/bin/sh", "-c", pauseCmd)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println("pause error: ", err.Error())
-		os.Exit(1)
-	}
+	cmd.Run()
 }

@@ -6,12 +6,18 @@ import (
 )
 
 const (
-	MSG_HB         = 0
-	MSG_UPDATE_EXP = 1
+	MSG_HB             = 0
+	MSG_UPDATE_TARGETS = 1
+)
+
+const (
+	AGENT_RESPONSE_FAILURE = 0
+	AGENT_RESPONSE_SUCCESS = 1
 )
 
 type DcozMessage struct {
 	MessageType   int
+	SendResponse  bool
 	ContainerIds  []string
 	PausePeriod   time.Duration
 	PauseDuration time.Duration

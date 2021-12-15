@@ -1,13 +1,16 @@
 package main
 
 import (
-	"encoding/json"
+	"bufio"
 	"flag"
 	"fmt"
-	"log"
+	"io"
 	"net"
 	"os"
 	"strings"
+	"time"
+
+	"github.com/NicholasSpringer/dcoz/shared"
 )
 
 type pauseConfig struct {
@@ -16,17 +19,21 @@ type pauseConfig struct {
 	pauseBinPath string
 }
 
+type contrConn struct {
+	conn         *net.TCPConn
+	contrMsgChan chan *shared.DcozMessage
+	closeChan    chan struct{}
+}
+
 type agent struct {
-	pauseCfg pauseConfig
-	port     int
+	pauseCfg       pauseConfig
+	contr          *contrConn
+	newConnChan    chan *contrConn
+	updatePidsChan chan []int
+	targetPids     []int
+	pauseDuration  time.Duration
+	pausePeriod    time.Duration
 }
-
-type speedupMessage struct {
-	Duration         int      `json:"duration"`
-	TargetContainers []string `json:"targetContainers"`
-}
-
-const PAUSE_TARGET_NS_PID = 1
 
 func main() {
 	var nCores int
@@ -37,9 +44,6 @@ func main() {
 
 	var pauseBinPath string
 	flag.StringVar(&pauseBinPath, "pause", "", "Pausing binary path")
-
-	var port int
-	flag.IntVar(&port, "port", -1, "Port to listen on")
 
 	flag.Parse()
 	errors := []string{}
@@ -52,53 +56,143 @@ func main() {
 	if pauseBinPath == "" {
 		errors = append(errors, "Must specify pause path using -pause")
 	}
-	if port == -1 {
-		errors = append(errors, "Must specify port using -port")
-	}
 	if len(errors) != 0 {
 		fmt.Println(strings.Join(errors, "\n"))
 		os.Exit(1)
 	}
-	ag := agent{pauseCfg: pauseConfig{nCores: nCores,
-		prio: prio, pauseBinPath: pauseBinPath}, port: port}
-	ag.listen()
+	ag := agent{
+		pauseCfg: pauseConfig{
+			nCores:       nCores,
+			prio:         prio,
+			pauseBinPath: pauseBinPath,
+		},
+		newConnChan:    make(chan *contrConn),
+		updatePidsChan: make(chan []int),
+	}
+
+	go listenForConnections(ag.newConnChan)
+	ag.run()
+}
+
+func listenForConnections(newConnChan chan *contrConn) {
+	for {
+		laddr := net.TCPAddr{
+			IP:   net.ParseIP("0.0.0.0"),
+			Port: shared.AGENT_PORT,
+		}
+		listener, err := net.ListenTCP("tcp", &laddr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error while creating TCP listener: %s\n", err)
+			continue
+		}
+		conn, err := listener.AcceptTCP()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error while waiting for TCP connection: %s\n", err)
+			continue
+		}
+		newContrConn := contrConn{
+			conn:         conn,
+			contrMsgChan: make(chan *shared.DcozMessage),
+			closeChan:    make(chan struct{}),
+		}
+		go newContrConn.receiveMessages()
+		newConnChan <- &newContrConn
+	}
+}
+
+func (contr *contrConn) receiveMessages() {
+	contr.resetHbDeadline()
+	scanner := bufio.NewScanner(contr.conn)
+	for {
+		if !scanner.Scan() {
+			err := scanner.Err()
+			contr.conn.Close()
+			close(contr.contrMsgChan)
+			if err == nil {
+				fmt.Printf("Controller %s closed the connection\n", contr.conn.RemoteAddr())
+			} else {
+				fmt.Fprintf(os.Stderr, "Disconnected from controller %s due error: %s\n", contr.conn.RemoteAddr(), err)
+			}
+			return
+		}
+		contr.resetHbDeadline()
+		msg := shared.DcozMessage{}
+		shared.UnmarshalDcozMessage([]byte(scanner.Text()), &msg)
+		select {
+		case _, open := <-contr.closeChan:
+			if open {
+				panic("No messages should be sent on controller connection close channel!\n")
+			}
+			fmt.Printf("Closing connection to controller %s due to new connection\n", contr.conn.RemoteAddr())
+			contr.conn.Close()
+			return
+		case contr.contrMsgChan <- &msg:
+		}
+	}
+}
+
+func (contr *contrConn) resetHbDeadline() {
+	err := contr.conn.SetDeadline(time.Now().Add(shared.HEARTBEAT_TIMEOUT))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error setting heartbeat deadline: %s\n", err)
+	}
+}
+
+func (contr *contrConn) sendResponse(resp byte) {
+	respBytes := []byte{resp}
+	_, err := contr.conn.Write(respBytes)
+	if err != nil && err != io.EOF {
+		fmt.Fprintf(os.Stderr, "Error responding to controller %s: %s\n", contr.conn.RemoteAddr(), err)
+	}
 }
 
 // Listen for messages from controller
-func (ag *agent) listen() {
-	addr := net.UDPAddr{
-		Port: ag.port,
-		IP:   net.ParseIP("0.0.0.0"),
-	}
-	conn, err := net.ListenUDP("udp", &addr)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	defer conn.Close()
-	buff := make([]byte, 2048)
+func (ag *agent) run() {
 	println("Agent started!")
+	pauseTicker := time.NewTicker(time.Hour)
+	pauseTicker.Stop()
+	tickerRunning := false
 	for {
-		length, contrAddr, err := conn.ReadFromUDP(buff)
-		if err != nil {
-			fmt.Println("udp listening error: ", err.Error())
-			os.Exit(1)
+		if ag.contr == nil {
+			ag.contr = <-ag.newConnChan
 		}
-		var speedupMsg speedupMessage
-		err = json.Unmarshal(buff[:length], &speedupMsg)
-		if err != nil {
-			fmt.Println("json unmarshal error: ", err)
-			continue
-		}
-		fmt.Printf("Speedup Message: %v\n", speedupMsg)
-		// Respond with heartbeat after successfully receiving message
-		hbMsg := []byte{0}
-		conn.WriteToUDP(hbMsg, contrAddr)
-
-		// If pause duration is 0, do not execute a pause. Otherwise, translate
-		// target pod identifier to target local pids and execute pause.
-		if speedupMsg.Duration != 0 {
-			targetPids := getTargetPids(speedupMsg.TargetContainers)
-			pause(&ag.pauseCfg, speedupMsg.Duration, targetPids)
+		select {
+		case newContr := <-ag.newConnChan:
+			close(ag.contr.closeChan)
+			if tickerRunning {
+				pauseTicker.Stop()
+				tickerRunning = false
+			}
+			ag.contr = newContr
+		case msg := <-ag.contr.contrMsgChan:
+			if msg.MessageType == shared.MSG_UPDATE_TARGETS {
+				go updatePids(msg.ContainerIds, ag.updatePidsChan)
+				ag.pauseDuration = msg.PauseDuration
+				if ag.pausePeriod != msg.PausePeriod {
+					ag.pausePeriod = msg.PausePeriod
+					if tickerRunning {
+						pauseTicker.Reset(msg.PausePeriod)
+					} else {
+						pauseTicker = time.NewTicker(msg.PausePeriod)
+						tickerRunning = true
+					}
+				}
+				if msg.SendResponse {
+					newPids := <-ag.updatePidsChan
+					ag.targetPids = newPids
+					ag.contr.sendResponse(shared.AGENT_RESPONSE_SUCCESS)
+				}
+			}
+		case newPids := <-ag.updatePidsChan:
+			ag.targetPids = newPids
+		case <-pauseTicker.C:
+			if ag.targetPids != nil && ag.pauseDuration != 0 {
+				pause(&ag.pauseCfg, ag.pauseDuration, ag.targetPids)
+			}
 		}
 	}
+}
+
+func updatePids(targetContainers []string, updatePidsChan chan []int) {
+	updatePidsChan <- getTargetPids(targetContainers)
 }

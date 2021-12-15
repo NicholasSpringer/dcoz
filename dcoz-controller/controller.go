@@ -72,6 +72,6 @@ func main() {
 	}
 	fmt.Println("Average Request Latencies:")
 	for i := 0; i < len(targets); i += 1 {
-		fmt.Printf("%s: %.3f ms", targets[i], adjustedAvgLatencies[i])
+		fmt.Printf("%s: %.3f ms\n", targets[i], adjustedAvgLatencies[i])
 	}
 }

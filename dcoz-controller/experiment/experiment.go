@@ -12,8 +12,7 @@ import (
 	"github.com/NicholasSpringer/dcoz/shared"
 )
 
-const UPDATE_CONTAINER_IDS_PERIOD = time.Second * 10
-const UPDATE_AGENTS_PERIOD = time.Second * 10
+const UPDATE_AGENTS_PERIOD = time.Second * 15
 const EXP_DURATION = time.Second * 60
 
 type Experimenter struct {
@@ -54,8 +53,8 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 		} else {
 			exp.connectToAgents(agentIps)
 		}
-		// Update container ids
-		err = exp.UpdateContainerIds(target)
+		// Update container ids, wait for response to synchronize
+		err = exp.UpdateContainerIds(target, true)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting initial containerIds for target %s, skipping: %s\n", target, err)
 			stats = append(stats, tracker.TrackerStats{})
@@ -64,7 +63,6 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 
 		hbTicker := time.NewTicker(shared.HEARTBEAT_PERIOD)
 		updateAgentsTicker := time.NewTicker(UPDATE_AGENTS_PERIOD)
-		updateContainerIdTicker := time.NewTicker(UPDATE_CONTAINER_IDS_PERIOD)
 		endExperimentTimer := time.NewTimer(EXP_DURATION)
 
 		exp.tracker.StartTracking()
@@ -86,33 +84,44 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 					fmt.Fprintf(os.Stderr, "Error getting agent IPs: %s\n", err)
 				} else {
 					exp.connectToAgents(agentIps)
-				}
-			case <-updateContainerIdTicker.C:
-				err = exp.UpdateContainerIds(target)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error getting containerIds for target %s: %s\n", target, err)
+					exp.UpdateContainerIds(target, false)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Error getting containerIds for target %s: %s\n", target, err)
+					}
 				}
 			}
 		}
 		experimentStats := exp.tracker.FinishTracking()
 		stats = append(stats, experimentStats)
 	}
+	exp.CloseAgentConns()
 	return stats, nil
 }
 
-func (exp *Experimenter) UpdateContainerIds(target string) error {
+func (exp *Experimenter) UpdateContainerIds(target string, waitForResponse bool) error {
 	containerIds, err := util.GetContainerIds(target)
 	if err != nil {
 		return err
 	}
 	updateMsg := shared.DcozMessage{
-		MessageType:   shared.MSG_UPDATE_EXP,
+		MessageType:   shared.MSG_UPDATE_TARGETS,
+		SendResponse:  waitForResponse,
 		ContainerIds:  containerIds,
 		PausePeriod:   exp.config.PausePeriod,
 		PauseDuration: exp.config.PauseDuration,
 	}
 	exp.broadcastMessage(&updateMsg)
 	return nil
+}
+
+func (exp *Experimenter) CloseAgentConns() {
+	for agentIp, agent := range exp.agents {
+		err := agent.close()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error closing agent connection: %s\n", err)
+		}
+		delete(exp.agents, agentIp)
+	}
 }
 
 type agentConn struct {
@@ -129,6 +138,10 @@ func newAgentConn(agentIp string) (*agentConn, error) {
 		conn: conn,
 	}
 	return agent, nil
+}
+
+func (agent *agentConn) close() error {
+	return agent.conn.Close()
 }
 
 type agentConnectResult struct {
@@ -172,16 +185,18 @@ func connectToAgent(agentIp string, resultChan chan agentConnectResult) {
 }
 
 type agentMessageResult struct {
-	agentIp string
-	err     error
+	agentIp  string
+	err      error
+	response byte
 }
 
 func (exp *Experimenter) broadcastMessage(msg *shared.DcozMessage) {
 	msgBytes := shared.MarshallDcozMessage(msg)
+	msgBytes = append(msgBytes, '\n')
 	resultChan := make(chan agentMessageResult)
 	// Multicast message
 	for agentIp, agent := range exp.agents {
-		go agent.sendMessage(msgBytes, agentIp, resultChan)
+		go agent.sendMessage(msgBytes, agentIp, msg.SendResponse, resultChan)
 	}
 	// Wait for messages to come back, delete agents if connection closed
 	for i := 0; i < len(exp.agents); i++ {
@@ -194,14 +209,48 @@ func (exp *Experimenter) broadcastMessage(msg *shared.DcozMessage) {
 				fmt.Fprintf(os.Stderr, "Connection error to agent %s: %s\n", result.agentIp, result.err)
 			}
 		}
+		if msg.SendResponse && result.response != shared.AGENT_RESPONSE_SUCCESS {
+			fmt.Fprintf(os.Stderr, "Agent %s responded with failure\n", result.agentIp)
+		}
 	}
 }
 
-func (agent *agentConn) sendMessage(msg []byte, agentIp string, resultChan chan agentMessageResult) {
+func (agent *agentConn) sendMessage(msg []byte, agentIp string, waitForResponse bool, resultChan chan agentMessageResult) {
 	_, err := agent.conn.Write(msg)
-	result := agentMessageResult{
-		agentIp: agentIp,
-		err:     err,
+	if err != nil {
+		result := agentMessageResult{
+			agentIp: agentIp,
+			err:     err,
+		}
+		resultChan <- result
+		return
 	}
-	resultChan <- result
+	if waitForResponse {
+		resp := make([]byte, 1)
+		n, err := agent.conn.Read(resp)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading response from agent %s: %s\n", agentIp, err)
+			result := agentMessageResult{
+				agentIp: agentIp,
+				err:     err,
+			}
+			resultChan <- result
+			return
+		}
+		if n != 1 {
+			panic("Should not get more than one response")
+		}
+		result := agentMessageResult{
+			agentIp:  agentIp,
+			err:      nil,
+			response: resp[0],
+		}
+		resultChan <- result
+	} else {
+		result := agentMessageResult{
+			agentIp: agentIp,
+			err:     nil,
+		}
+		resultChan <- result
+	}
 }

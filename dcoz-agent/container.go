@@ -18,8 +18,8 @@ func getTargetPids(targetContainers []string) []int {
 	}
 	procDirs, err := ioutil.ReadDir("/proc")
 	if err != nil {
-		fmt.Println("error reading proc dir: ", err.Error())
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "error reading proc dir: %s\n", err.Error())
+		return nil
 	}
 	targetPids := []int{}
 	for _, procDir := range procDirs {
@@ -50,7 +50,7 @@ func getContainerId(pid int) string {
 	cgroupFile, err := os.Open(fmt.Sprintf("/proc/%d/cgroup", pid))
 	if err != nil {
 		// Pid may no longer exist
-		fmt.Println("error reading cgroup file: ", err.Error())
+		fmt.Fprintf(os.Stderr, "error reading cgroup file: %s\n", err.Error())
 		return ""
 	}
 	scanner := bufio.NewScanner(cgroupFile)
