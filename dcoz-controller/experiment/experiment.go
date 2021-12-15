@@ -34,6 +34,7 @@ func CreateExperimenter(config ExperimenterConfig, tracker *tracker.Tracker) *Ex
 }
 
 func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStats, error) {
+	fmt.Println("Experimenter started!")
 	exp.agents = make(map[string]*agentConn)
 	agentIps, err := util.GetAgentIps()
 	if err != nil {
@@ -43,6 +44,10 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 	if len(exp.agents) == 0 {
 		return nil, errors.New("Experimenter cannot connect to any agents")
 	}
+	fmt.Printf("Experimenter: Connected to %d agents\n", len(exp.agents))
+
+	hbTicker := time.NewTicker(shared.HEARTBEAT_PERIOD)
+	updateAgentsTicker := time.NewTicker(UPDATE_AGENTS_PERIOD)
 
 	stats := []tracker.TrackerStats{}
 	for _, target := range targets {
@@ -53,6 +58,7 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 		} else {
 			exp.connectToAgents(agentIps)
 		}
+		fmt.Printf("Experimenter: synchronizing agents on target %s\n", target)
 		// Update container ids, wait for response to synchronize
 		err = exp.UpdateContainerIds(target, true)
 		if err != nil {
@@ -61,10 +67,7 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 			continue
 		}
 
-		hbTicker := time.NewTicker(shared.HEARTBEAT_PERIOD)
-		updateAgentsTicker := time.NewTicker(UPDATE_AGENTS_PERIOD)
 		endExperimentTimer := time.NewTimer(EXP_DURATION)
-
 		exp.tracker.StartTracking()
 
 	Exp:
@@ -79,6 +82,7 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 				exp.broadcastMessage(&msg)
 			case <-updateAgentsTicker.C:
 				// Check for new agents
+				fmt.Println("Experimenter: Getting agent IPs")
 				agentIps, err = util.GetAgentIps()
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error getting agent IPs: %s\n", err)
@@ -99,6 +103,7 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 }
 
 func (exp *Experimenter) UpdateContainerIds(target string, waitForResponse bool) error {
+	fmt.Printf("Experimenter: getting container IDs for target %s\n", target)
 	containerIds, err := util.GetContainerIds(target)
 	if err != nil {
 		return err
@@ -110,6 +115,7 @@ func (exp *Experimenter) UpdateContainerIds(target string, waitForResponse bool)
 		PausePeriod:   exp.config.PausePeriod,
 		PauseDuration: exp.config.PauseDuration,
 	}
+	fmt.Printf("Experimenter: sending container IDs to agents for target %s\n", target)
 	exp.broadcastMessage(&updateMsg)
 	return nil
 }
@@ -171,6 +177,7 @@ func (exp *Experimenter) connectToAgents(agentIps []string) {
 			fmt.Fprintf(os.Stderr, "Could not connect to agent %s\n", result.agentIp)
 		} else {
 			exp.agents[result.agentIp] = result.agent
+			fmt.Printf("Experimenter: Connected to agent %s\n", result.agentIp)
 		}
 	}
 }

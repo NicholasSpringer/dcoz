@@ -75,6 +75,7 @@ func main() {
 }
 
 func listenForConnections(newConnChan chan *contrConn) {
+	fmt.Println("Listening for connections!")
 	for {
 		laddr := net.TCPAddr{
 			IP:   net.ParseIP("0.0.0.0"),
@@ -95,6 +96,7 @@ func listenForConnections(newConnChan chan *contrConn) {
 			contrMsgChan: make(chan *shared.DcozMessage),
 			closeChan:    make(chan struct{}),
 		}
+		fmt.Printf("Listener: New connection from %s\n", newContrConn.conn.RemoteAddr())
 		go newContrConn.receiveMessages()
 		newConnChan <- &newContrConn
 	}
@@ -158,6 +160,7 @@ func (ag *agent) run() {
 		}
 		select {
 		case newContr := <-ag.newConnChan:
+			fmt.Printf("Agent: accepting new controller connection from: %s\n", newContr.conn.RemoteAddr())
 			close(ag.contr.closeChan)
 			if tickerRunning {
 				pauseTicker.Stop()
@@ -166,9 +169,11 @@ func (ag *agent) run() {
 			ag.contr = newContr
 		case msg := <-ag.contr.contrMsgChan:
 			if msg.MessageType == shared.MSG_UPDATE_TARGETS {
+				fmt.Println("Starting check for new pids")
 				go updatePids(msg.ContainerIds, ag.updatePidsChan)
 				ag.pauseDuration = msg.PauseDuration
-				if ag.pausePeriod != msg.PausePeriod {
+				if !tickerRunning || ag.pausePeriod != msg.PausePeriod {
+					fmt.Printf("Agent: starting new timer with period: %d ms\n", msg.PausePeriod)
 					ag.pausePeriod = msg.PausePeriod
 					if tickerRunning {
 						pauseTicker.Reset(msg.PausePeriod)
@@ -178,12 +183,14 @@ func (ag *agent) run() {
 					}
 				}
 				if msg.SendResponse {
+					fmt.Println("Synchronizing on new targets")
 					newPids := <-ag.updatePidsChan
 					ag.targetPids = newPids
 					ag.contr.sendResponse(shared.AGENT_RESPONSE_SUCCESS)
 				}
 			}
 		case newPids := <-ag.updatePidsChan:
+			fmt.Println("Updating pids")
 			ag.targetPids = newPids
 		case <-pauseTicker.C:
 			if ag.targetPids != nil && ag.pauseDuration != 0 {

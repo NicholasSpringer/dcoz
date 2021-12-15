@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -53,6 +54,7 @@ func CreateTracker(entrypoint string) *Tracker {
 }
 
 func (t *Tracker) track() {
+	fmt.Println("Tracker started!")
 	for {
 		select {
 		case controlMsg := <-t.controlInChan:
@@ -60,9 +62,12 @@ func (t *Tracker) track() {
 				t.expNum.Inc()
 				t.isTracking = true
 				t.stats = TrackerStats{}
+				fmt.Println("Tracker: started tracking")
 			} else {
 				t.isTracking = false
 				t.controlOutChan <- t.stats
+				fmt.Println("Tracker: finished tracking")
+
 			}
 		case reqMsg := <-t.reqMsgChan:
 			if !t.isTracking || reqMsg.expNum != t.expNum.Load() {
@@ -77,6 +82,7 @@ func (t *Tracker) track() {
 }
 
 func (t *Tracker) startWorkload() {
+	fmt.Println("Tracker workload started!")
 	reqTicker := time.NewTicker(REQUEST_PERIOD)
 	for {
 		<-reqTicker.C
