@@ -13,9 +13,6 @@ import (
 )
 
 func main() {
-	var agentPort int
-	flag.IntVar(&agentPort, "agent-port", -1, "Port to connect to dcoz-agents")
-
 	var pauseDuration time.Duration
 	flag.DurationVar(&pauseDuration, "d", -1, "Duration of pause")
 
@@ -29,9 +26,6 @@ func main() {
 	targets := flag.Args()
 
 	errors := []string{}
-	if agentPort == -1 {
-		errors = append(errors, "Must specify -agent-port")
-	}
 	if pausePeriod == -1 {
 		errors = append(errors, "Must specify -p")
 	}
@@ -73,5 +67,7 @@ func main() {
 	fmt.Println("Average Request Latencies:")
 	for i := 0; i < len(targets); i += 1 {
 		fmt.Printf("%s: %.3f ms\n", targets[i], adjustedAvgLatencies[i])
+	}
+	for {
 	}
 }

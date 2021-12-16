@@ -62,12 +62,12 @@ func (t *Tracker) track() {
 				t.expNum.Inc()
 				t.isTracking = true
 				t.stats = TrackerStats{}
+				t.controlOutChan <- TrackerStats{}
 				fmt.Println("Tracker: started tracking")
 			} else {
 				t.isTracking = false
 				t.controlOutChan <- t.stats
 				fmt.Println("Tracker: finished tracking")
-
 			}
 		case reqMsg := <-t.reqMsgChan:
 			if !t.isTracking || reqMsg.expNum != t.expNum.Load() {

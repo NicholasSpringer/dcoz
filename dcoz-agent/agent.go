@@ -75,17 +75,16 @@ func main() {
 }
 
 func listenForConnections(newConnChan chan *contrConn) {
+	laddr := net.TCPAddr{
+		IP:   net.ParseIP("0.0.0.0"),
+		Port: shared.AGENT_PORT,
+	}
+	listener, err := net.ListenTCP("tcp", &laddr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error while creating TCP listener: %s\n", err)
+	}
 	fmt.Println("Listening for connections!")
 	for {
-		laddr := net.TCPAddr{
-			IP:   net.ParseIP("0.0.0.0"),
-			Port: shared.AGENT_PORT,
-		}
-		listener, err := net.ListenTCP("tcp", &laddr)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error while creating TCP listener: %s\n", err)
-			continue
-		}
 		conn, err := listener.AcceptTCP()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error while waiting for TCP connection: %s\n", err)
@@ -113,7 +112,7 @@ func (contr *contrConn) receiveMessages() {
 			if err == nil {
 				fmt.Printf("Controller %s closed the connection\n", contr.conn.RemoteAddr())
 			} else {
-				fmt.Fprintf(os.Stderr, "Disconnected from controller %s due error: %s\n", contr.conn.RemoteAddr(), err)
+				fmt.Fprintf(os.Stderr, "Disconnected from controller %s due to error: %s\n", contr.conn.RemoteAddr(), err)
 			}
 			return
 		}
@@ -157,6 +156,7 @@ func (ag *agent) run() {
 	for {
 		if ag.contr == nil {
 			ag.contr = <-ag.newConnChan
+			fmt.Printf("Agent: accepted initial controller connection from: %s\n", ag.contr.conn.RemoteAddr())
 		}
 		select {
 		case newContr := <-ag.newConnChan:
@@ -165,32 +165,47 @@ func (ag *agent) run() {
 			if tickerRunning {
 				pauseTicker.Stop()
 				tickerRunning = false
+				ag.targetPids = nil
 			}
 			ag.contr = newContr
-		case msg := <-ag.contr.contrMsgChan:
+		case msg, open := <-ag.contr.contrMsgChan:
+			if !open {
+				pauseTicker.Stop()
+				tickerRunning = false
+				ag.contr = nil
+				ag.targetPids = nil
+				break
+			}
 			if msg.MessageType == shared.MSG_UPDATE_TARGETS {
-				fmt.Println("Starting check for new pids")
 				go updatePids(msg.ContainerIds, ag.updatePidsChan)
 				ag.pauseDuration = msg.PauseDuration
 				if !tickerRunning || ag.pausePeriod != msg.PausePeriod {
-					fmt.Printf("Agent: starting new timer with period: %d ms\n", msg.PausePeriod)
+					fmt.Printf("Agent: starting new timer with period: %d ms\n", msg.PausePeriod.Milliseconds())
 					ag.pausePeriod = msg.PausePeriod
-					if tickerRunning {
-						pauseTicker.Reset(msg.PausePeriod)
+					if msg.PausePeriod == 0 || msg.PauseDuration == 0 {
+						if tickerRunning {
+							pauseTicker.Stop()
+							tickerRunning = false
+							ag.targetPids = nil
+						}
 					} else {
-						pauseTicker = time.NewTicker(msg.PausePeriod)
-						tickerRunning = true
+						if tickerRunning {
+							pauseTicker.Reset(msg.PausePeriod)
+						} else {
+							pauseTicker = time.NewTicker(msg.PausePeriod)
+							tickerRunning = true
+						}
 					}
 				}
 				if msg.SendResponse {
-					fmt.Println("Synchronizing on new targets")
+					fmt.Println("Agent: Synchronizing on new targets")
 					newPids := <-ag.updatePidsChan
 					ag.targetPids = newPids
 					ag.contr.sendResponse(shared.AGENT_RESPONSE_SUCCESS)
 				}
 			}
 		case newPids := <-ag.updatePidsChan:
-			fmt.Println("Updating pids")
+			fmt.Printf("Agent: Updating target pids to %d entries\n", len(newPids))
 			ag.targetPids = newPids
 		case <-pauseTicker.C:
 			if ag.targetPids != nil && ag.pauseDuration != 0 {

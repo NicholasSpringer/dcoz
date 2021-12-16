@@ -15,7 +15,6 @@ func pause(config *pauseConfig, duration time.Duration, targetPids []int) {
 		pauseCmdRaw = append(pauseCmdRaw, []byte(fmt.Sprintf(" %d", pid))...)
 	}
 	pauseCmd := string(pauseCmdRaw)
-	println(pauseCmd)
 	cmd := exec.Command("/bin/sh", "-c", pauseCmd)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

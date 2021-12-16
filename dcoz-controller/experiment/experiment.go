@@ -3,6 +3,7 @@ package experiment
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"time"
@@ -12,7 +13,7 @@ import (
 	"github.com/NicholasSpringer/dcoz/shared"
 )
 
-const UPDATE_AGENTS_PERIOD = time.Second * 15
+const UPDATE_AGENTS_PERIOD = time.Second * 5
 const EXP_DURATION = time.Second * 60
 
 type Experimenter struct {
@@ -103,7 +104,6 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 }
 
 func (exp *Experimenter) UpdateContainerIds(target string, waitForResponse bool) error {
-	fmt.Printf("Experimenter: getting container IDs for target %s\n", target)
 	containerIds, err := util.GetContainerIds(target)
 	if err != nil {
 		return err
@@ -115,7 +115,9 @@ func (exp *Experimenter) UpdateContainerIds(target string, waitForResponse bool)
 		PausePeriod:   exp.config.PausePeriod,
 		PauseDuration: exp.config.PauseDuration,
 	}
-	fmt.Printf("Experimenter: sending container IDs to agents for target %s\n", target)
+	if waitForResponse {
+		fmt.Printf("Experimenter: synchronizing agents on new target %s\n", target)
+	}
 	exp.broadcastMessage(&updateMsg)
 	return nil
 }
@@ -210,7 +212,7 @@ func (exp *Experimenter) broadcastMessage(msg *shared.DcozMessage) {
 		result := <-resultChan
 		if result.err != nil {
 			delete(exp.agents, result.agentIp)
-			if result.err == net.ErrClosed {
+			if result.err == net.ErrClosed || result.err == io.EOF {
 				fmt.Fprintf(os.Stderr, "Connection closed to agent %s\n", result.agentIp)
 			} else if result.err != nil {
 				fmt.Fprintf(os.Stderr, "Connection error to agent %s: %s\n", result.agentIp, result.err)

@@ -1,0 +1,1 @@
+docker build -f ./docker/dcoz-controller/Dockerfile -t springern/dcoz-controller .

@@ -2,8 +2,12 @@ package util
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"regexp"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -24,9 +28,12 @@ func GetAgentIps() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	dsetSelector := dset.Spec.Selector
-
-	agentPods, err := clientset.CoreV1().Pods("default").List(context.TODO(), metav1.ListOptions{LabelSelector: dsetSelector.String()})
+	labelMap, err := metav1.LabelSelectorAsMap(dset.Spec.Selector)
+	if err != nil {
+		return nil, err
+	}
+	selectorString := labels.SelectorFromSet(labelMap).String()
+	agentPods, err := clientset.CoreV1().Pods("default").List(context.TODO(), metav1.ListOptions{LabelSelector: selectorString})
 	if err != nil {
 		return nil, err
 	}
@@ -37,6 +44,9 @@ func GetAgentIps() ([]string, error) {
 	}
 	return agentIps, nil
 }
+
+var containerIdPattern *regexp.Regexp = regexp.MustCompile(
+	`docker://([a-z|\d]{64})`)
 
 func GetContainerIds(depName string) ([]string, error) {
 	config, err := rest.InClusterConfig()
@@ -54,8 +64,12 @@ func GetContainerIds(depName string) ([]string, error) {
 		return nil, err
 	}
 
-	depSelector := dep.Spec.Selector
-	depPods, err := clientset.CoreV1().Pods("default").List(context.TODO(), metav1.ListOptions{LabelSelector: depSelector.String()})
+	labelMap, err := metav1.LabelSelectorAsMap(dep.Spec.Selector)
+	if err != nil {
+		return nil, err
+	}
+	selectorString := labels.SelectorFromSet(labelMap).String()
+	depPods, err := clientset.CoreV1().Pods("default").List(context.TODO(), metav1.ListOptions{LabelSelector: selectorString})
 	if err != nil {
 		return nil, err
 	}
@@ -64,8 +78,11 @@ func GetContainerIds(depName string) ([]string, error) {
 	for _, depPod := range depPods.Items {
 		containerStatuses := depPod.Status.ContainerStatuses
 		for _, cs := range containerStatuses {
-			// TODO: ADD REGEXP ??? probably need to
-			containerIds = append(containerIds, cs.ContainerID)
+			matches := containerIdPattern.FindStringSubmatch(cs.ContainerID)
+			if matches == nil {
+				fmt.Fprintf(os.Stderr, "Cannot parse container id %s\n", cs.ContainerID)
+			}
+			containerIds = append(containerIds, matches[1])
 		}
 	}
 	return containerIds, nil
