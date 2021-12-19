@@ -15,16 +15,16 @@ spec:
     spec:
       hostPID: true
       containers:
-      - name: dcoz-agent
-        image: docker.io/springern/dcoz-agent:latest
-        command: ["/bin/bash"]
-        args: 
-        - "-c"
-        - >-
-          sysctl -w kernel.sched_rt_runtime_us=-1 && 
-          dcoz-agent -cores $(nproc) -priority 90 -pause dcoz-pause 
-        securityContext:
-          privileged: true
-        ports:
-        - containerPort: 8081
-          protocol: UDP
+        - name: dcoz-agent
+          image: docker.io/springern/dcoz-agent:latest
+          command: ["/bin/bash"]
+          args: 
+            - "-c"
+            - >-
+              sysctl -w kernel.sched_rt_runtime_us=-1 && 
+              dcoz-agent -cores $(nproc) -priority 90 -pause dcoz-pause 
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 8081
+              protocol: UDP

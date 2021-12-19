@@ -8,21 +8,21 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
  name: role-dcoz-controller
 rules:
-- apiGroups: ["apps"]
-  resources: ["daemonsets", "deployments"]
-  verbs: ["get"]
-- apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets", "deployments"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
  name: role-dcoz-controller-binding
 subjects:
-- kind: ServiceAccount
-  namespace: default
-  name: account-dcoz-controller
+  - kind: ServiceAccount
+    namespace: default
+    name: account-dcoz-controller
 roleRef:
   kind: ClusterRole
   name: role-dcoz-controller
@@ -45,16 +45,21 @@ spec:
     spec:
       serviceAccountName: account-dcoz-controller
       containers:
-      - name: dcoz-controller
-        image: docker.io/springern/dcoz-controller:latest
-        command: ["dcoz-controller"]
-        args: 
-        - -p
-        - 4s
-        - -d
-        - 2s
-        - -entrypoint
-        - "10.4.5.5:8080"
-        - hello-server
-        - dcoz-test
+        - name: dcoz-controller
+          image: docker.io/springern/dcoz-controller:latest
+          command: ["dcoz-controller"]
+          args: 
+            - -p
+            - 100ms
+            - -d
+            - 40ms
+            - -rp
+            - 1s
+            - -ed
+            - 180s
+            - -entrypoint
+            - dummy-service.default.svc.cluster.local
+            - dcoz-controller
+            - dummy-1
+            - dummy-2
         

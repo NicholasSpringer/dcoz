@@ -25,6 +25,7 @@ type Experimenter struct {
 type ExperimenterConfig struct {
 	PauseDuration time.Duration
 	PausePeriod   time.Duration
+	ExpDuration   time.Duration
 }
 
 func CreateExperimenter(config ExperimenterConfig, tracker *tracker.Tracker) *Experimenter {
@@ -59,7 +60,6 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 		} else {
 			exp.connectToAgents(agentIps)
 		}
-		fmt.Printf("Experimenter: synchronizing agents on target %s\n", target)
 		// Update container ids, wait for response to synchronize
 		err = exp.UpdateContainerIds(target, true)
 		if err != nil {
@@ -68,7 +68,7 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 			continue
 		}
 
-		endExperimentTimer := time.NewTimer(EXP_DURATION)
+		endExperimentTimer := time.NewTimer(exp.config.ExpDuration)
 		exp.tracker.StartTracking()
 
 	Exp:
@@ -83,7 +83,6 @@ func (exp *Experimenter) RunExperiments(targets []string) ([]tracker.TrackerStat
 				exp.broadcastMessage(&msg)
 			case <-updateAgentsTicker.C:
 				// Check for new agents
-				fmt.Println("Experimenter: Getting agent IPs")
 				agentIps, err = util.GetAgentIps()
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error getting agent IPs: %s\n", err)

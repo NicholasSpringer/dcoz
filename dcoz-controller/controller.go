@@ -13,11 +13,19 @@ import (
 )
 
 func main() {
+	fmt.Println("Sleeping 10s")
+	time.Sleep(time.Second * 10)
 	var pauseDuration time.Duration
 	flag.DurationVar(&pauseDuration, "d", -1, "Duration of pause")
 
 	var pausePeriod time.Duration
 	flag.DurationVar(&pausePeriod, "p", -1, "Period of pause")
+
+	var requestPeriod time.Duration
+	flag.DurationVar(&requestPeriod, "rp", -1, "Period of requests")
+
+	var expDuration time.Duration
+	flag.DurationVar(&expDuration, "ed", -1, "Duration of each experiment")
 
 	var entrypoint string
 	flag.StringVar(&entrypoint, "entrypoint", "", "IP of app entrypoint")
@@ -42,11 +50,30 @@ func main() {
 		fmt.Println(strings.Join(errors, "\n"))
 		os.Exit(1)
 	}
-	t := tracker.CreateTracker(entrypoint)
+	t := tracker.CreateTracker(entrypoint, requestPeriod)
 	expCfg := experiment.ExperimenterConfig{
 		PauseDuration: pauseDuration,
 		PausePeriod:   pausePeriod,
+		ExpDuration:   expDuration,
 	}
+	exps := []experiment.ExperimenterConfig{expCfg}
+	ids := []string{"1"}
+	for i := 0; i < len(exps); i++ {
+		runExperimenter(ids[i], targets, t, exps[i])
+	}
+	t.StartTracking()
+	time.Sleep(time.Second * 120)
+	stats := t.FinishTracking()
+	avgLatency := (float64(stats.TotalLatency) / float64(time.Millisecond)) / float64(stats.NRequests)
+	fmt.Println()
+	fmt.Println("No pauses")
+	fmt.Printf("%.3f ms\n", avgLatency)
+	t.StopWorkload()
+	for {
+	}
+}
+
+func runExperimenter(expId string, targets []string, t *tracker.Tracker, expCfg experiment.ExperimenterConfig) {
 	exp := experiment.CreateExperimenter(expCfg, t)
 	stats, err := exp.RunExperiments(targets)
 	if err != nil {
@@ -60,14 +87,15 @@ func main() {
 			adjustedAvgLatencies = append(adjustedAvgLatencies, -1)
 			continue
 		}
-		adjustedTotalLatency := util.AdjustLatency(experimentStats.TotalLatency, pauseDuration, pausePeriod)
+		adjustedTotalLatency := util.AdjustLatency(experimentStats.TotalLatency, expCfg.PauseDuration, expCfg.PausePeriod)
 		adjustedAvgLatency := (float64(adjustedTotalLatency) / float64(time.Millisecond)) / float64(experimentStats.NRequests)
 		adjustedAvgLatencies = append(adjustedAvgLatencies, adjustedAvgLatency)
 	}
-	fmt.Println("Average Request Latencies:")
+	fmt.Println()
+	fmt.Printf("EXP (%s) Average Request Latencies:", expId)
 	for i := 0; i < len(targets); i += 1 {
 		fmt.Printf("%s: %.3f ms\n", targets[i], adjustedAvgLatencies[i])
 	}
-	for {
-	}
+	fmt.Println()
+	return
 }

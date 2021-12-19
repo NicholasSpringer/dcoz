@@ -3,12 +3,11 @@ package tracker
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.uber.org/atomic"
 )
-
-const REQUEST_PERIOD = time.Millisecond * 500
 
 const (
 	TRACKER_START  = 0
@@ -37,9 +36,14 @@ type Tracker struct {
 	isTracking     bool
 	expNum         *atomic.Int64
 	stats          TrackerStats
+	stopRequests   chan struct{}
+	requestPeriod  time.Duration
 }
 
-func CreateTracker(entrypoint string) *Tracker {
+func CreateTracker(entrypoint string, requestPeriod time.Duration) *Tracker {
+	if !strings.HasPrefix(entrypoint, "http://") {
+		entrypoint = strings.Join([]string{"http://", entrypoint}, "")
+	}
 	t := Tracker{
 		entrypoint:     entrypoint,
 		isTracking:     false,
@@ -47,6 +51,8 @@ func CreateTracker(entrypoint string) *Tracker {
 		reqMsgChan:     make(chan requestMessage),
 		controlInChan:  make(chan TrackerControlMessage),
 		controlOutChan: make(chan TrackerStats),
+		stopRequests:   make(chan struct{}),
+		requestPeriod:  requestPeriod,
 	}
 	go t.track()
 	go t.startWorkload()
@@ -83,17 +89,28 @@ func (t *Tracker) track() {
 
 func (t *Tracker) startWorkload() {
 	fmt.Println("Tracker workload started!")
-	reqTicker := time.NewTicker(REQUEST_PERIOD)
+	reqTicker := time.NewTicker(t.requestPeriod)
 	for {
-		<-reqTicker.C
-		go t.makeGetRequest()
+		select {
+		case <-reqTicker.C:
+			go t.makeGetRequest()
+		case <-t.stopRequests:
+			return
+		}
 	}
+}
+
+func (t *Tracker) StopWorkload() {
+	t.stopRequests <- struct{}{}
 }
 
 func (t *Tracker) makeGetRequest() {
 	expNum := t.expNum.Load()
 	timeBefore := time.Now()
-	http.Get(t.entrypoint)
+	_, err := http.Get(t.entrypoint)
+	if err != nil {
+		fmt.Printf("Tracker: error sending request: %s\n", err)
+	}
 	latency := time.Since(timeBefore)
 	reqMsg := requestMessage{
 		expNum:  expNum,

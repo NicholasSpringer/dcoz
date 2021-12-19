@@ -1,0 +1,1 @@
+docker build -f ./docker/eval-dummy/Dockerfile -t springern/dcoz-eval-dummy .
